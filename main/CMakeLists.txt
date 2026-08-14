@@ -1,4 +1,15 @@
 idf_component_register(
-    SRCS "main.c" "pump_control.c" "soil_sensor.c" "bme280.c"
-    INCLUDE_DIRS "."
+    SRCS 
+        "main.c"
+        "drivers/pump_driver.c"
+        "drivers/moisture_adc.c"
+        "drivers/bme280_i2c.c"
+    INCLUDE_DIRS 
+        "."
+        "drivers"
+    REQUIRES 
+        driver 
+        esp_adc
+        freertos
+        log
 )
