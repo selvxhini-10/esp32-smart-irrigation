@@ -6,10 +6,10 @@
 #include "freertos/semphr.h"
 
 #define I2C_MASTER_NUM         I2C_NUM_0
-#define I2C_MASTER_SDA_IO      GPIO_NUM_6    // Adjust to your S3 SDA pin
-#define I2C_MASTER_SCL_IO      GPIO_NUM_7    // Adjust to your S3 SCL pin
+#define I2C_MASTER_SDA_IO      GPIO_NUM_8    // Adjust to your S3 SDA pin
+#define I2C_MASTER_SCL_IO      GPIO_NUM_9    // Adjust to your S3 SCL pin
 #define I2C_MASTER_FREQ_HZ     100000
-#define BME280_I2C_ADDR        0x76          // Primary address (or 0x77)
+#define BME280_I2C_ADDR 0x77  
 
 typedef struct {
     float temperature; // Degrees C

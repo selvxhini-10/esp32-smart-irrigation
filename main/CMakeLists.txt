@@ -4,12 +4,15 @@ idf_component_register(
         "drivers/pump_driver.c"
         "drivers/moisture_adc.c"
         "drivers/bme280_i2c.c"
+        "system/sys_queues.h"
     INCLUDE_DIRS 
         "."
         "drivers"
+        "system"
     REQUIRES 
         driver 
         esp_adc
         freertos
         log
+        esp_driver_gpio
 )
