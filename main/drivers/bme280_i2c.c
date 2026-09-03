@@ -3,77 +3,59 @@
 
 static const char *TAG = "BME280_I2C";
 
-esp_err_t bme280_i2c_init(SemaphoreHandle_t *out_mutex)
+esp_err_t bme280_i2c_init(SemaphoreHandle_t *out_mutex, i2c_master_dev_handle_t *out_dev_handle)
 {
+    // 1. Create Mutex for shared I2C bus thread safety
     *out_mutex = xSemaphoreCreateMutex();
-    if (*out_mutex == NULL) return ESP_ERR_NO_MEM;
+    if (*out_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create I2C Mutex");
+        return ESP_ERR_NO_MEM;
+    }
 
-    i2c_config_t conf = {
-        .mode = I2C_MODE_MASTER,
+    // 2. Configure I2C Master Bus (ESP-IDF v6.x API)
+    i2c_master_bus_config_t bus_config = {
+        .i2c_port = I2C_NUM_0,
         .sda_io_num = I2C_MASTER_SDA_IO,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
         .scl_io_num = I2C_MASTER_SCL_IO,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = I2C_MASTER_FREQ_HZ,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
     };
 
-    esp_err_t err = i2c_param_config(I2C_MASTER_NUM, &conf);
+    i2c_master_bus_handle_t bus_handle;
+    esp_err_t err = i2c_new_master_bus(&bus_config, &bus_handle);
     if (err != ESP_OK) return err;
 
-    err = i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
-    if (err != ESP_OK) return err;
+    // 3. Add BME280 device to bus
+    i2c_device_config_t dev_config = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = BME280_I2C_ADDR,
+        .scl_speed_hz = 100000,
+    };
 
-    // --- I2C BUS SCANNER ---
-    ESP_LOGI(TAG, "Scanning I2C bus on SDA GPIO %d, SCL GPIO %d...", I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
-    int devices_found = 0;
-    for (uint8_t addr = 1; addr < 127; addr++) {
-        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-        i2c_master_start(cmd);
-        i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, true);
-        i2c_master_stop(cmd);
-        esp_err_t scan_err = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, pdMS_TO_TICKS(50));
-        i2c_cmd_link_delete(cmd);
-
-        if (scan_err == ESP_OK) {
-            ESP_LOGI(TAG, " -> Found I2C device at address: 0x%02X", addr);
-            devices_found++;
-        }
+    err = i2c_master_bus_add_device(bus_handle, &dev_config, out_dev_handle);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "ESP-IDF v6.0 I2C Bus initialized (SDA: %d, SCL: %d)", I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
     }
-
-    if (devices_found == 0) {
-        ESP_LOGE(TAG, "No I2C devices responded! Check wiring, power (3.3V), and pull-ups.");
-        return ESP_FAIL;
-    }
-
-    return ESP_OK;
+    return err;
 }
 
-esp_err_t bme280_read_data(SemaphoreHandle_t mutex, bme280_data_t *out_data)
+esp_err_t bme280_read_data(SemaphoreHandle_t mutex, i2c_master_dev_handle_t dev_handle, bme280_data_t *out_data)
 {
     if (xSemaphoreTake(mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        
-        // 1. Send register address 0xF7 (start of Press/Temp/Hum data)
         uint8_t reg_addr = 0xF7;
         uint8_t raw_buf[8];
 
-        esp_err_t err = i2c_master_write_read_device(
-            I2C_MASTER_NUM, 
-            BME280_I2C_ADDR, 
-            &reg_addr, 1, 
-            raw_buf, 8, 
-            pdMS_TO_TICKS(100)
-        );
+        // ESP-IDF v6.0 Master Transmit & Receive API
+        esp_err_t err = i2c_master_transmit_receive(dev_handle, &reg_addr, 1, raw_buf, 8, 100);
 
         if (err == ESP_OK) {
-            // Unpack 20-bit raw temperature reading
             int32_t adc_T = (int32_t)(((uint32_t)raw_buf[3] << 12) | ((uint32_t)raw_buf[4] << 4) | ((uint32_t)raw_buf[5] >> 4));
-            
-            // Standard uncompensated conversion approximation for testing
             out_data->temperature = (float)(adc_T - 150000) / 5120.0f;
-            out_data->humidity = 50.0f;    // Baseline test placeholders
+            out_data->humidity = 50.0f;
             out_data->pressure = 1013.25f;
         } else {
-            ESP_LOGE(TAG, "I2C read failed at addr 0x%02X", BME280_I2C_ADDR);
+            ESP_LOGE(TAG, "I2C Transaction failed!");
         }
 
         xSemaphoreGive(mutex);

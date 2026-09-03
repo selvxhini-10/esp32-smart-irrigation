@@ -4,10 +4,13 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
+#define NUM_PLANTS 4
+
 typedef struct {
-    int moisture_raw[3];   // Readings for Plant 1, 2, 3
+    int moisture_raw[NUM_PLANTS]; // Channels 1, 2, 3, 4
     float temperature;
     float humidity;
+    float pressure;
 } sensor_data_t;
 
 extern QueueHandle_t xSensorQueue;
