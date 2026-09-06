@@ -5,9 +5,12 @@ idf_component_register(
         "drivers/moisture_adc.c"
         "drivers/bme280_i2c.c"
         "system/sys_queues.h"
+        "network/wifi_app.c"
+        "network/mqtt_app.c"
     INCLUDE_DIRS 
         "."
         "drivers"
+        "network"
         "system"
     REQUIRES 
         driver 
@@ -16,4 +19,7 @@ idf_component_register(
         log
         esp_driver_gpio
         esp_driver_i2c
+        nvs_flash
+        esp_wifi
+        mqtt
 )

@@ -1,0 +1,21 @@
+menu "Smart Irrigation System Configuration"
+
+    config ESP_WIFI_SSID
+        string "Wi-Fi SSID"
+        default "YOUR_WIFI_SSID"
+        help
+            SSID (network name) for the ESP32-S3 to connect to.
+
+    config ESP_WIFI_PASSWORD
+        string "Wi-Fi Password"
+        default "YOUR_WIFI_PASSWORD"
+        help
+            Wi-Fi password for the target access point.
+
+    config MQTT_BROKER_URI
+        string "MQTT Broker URI"
+        default "mqtt://192.168.1.100:1883"
+        help
+            Target MQTT broker address, including scheme and port (e.g., mqtt://192.168.1.100:1883).
+
+endmenu

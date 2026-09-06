@@ -7,7 +7,7 @@
 
 #define I2C_MASTER_SDA_IO      GPIO_NUM_8    // Adjust to your S3 SDA pin
 #define I2C_MASTER_SCL_IO      GPIO_NUM_9    // Adjust to your S3 SCL pin
-    #define BME280_I2C_ADDR        0x77          // Primary address (or 0x77)
+    #define BME280_I2C_ADDR        0x76          // Primary address (or 0x77)
 
 typedef struct {
     float temperature; // Degrees C
