@@ -31,8 +31,9 @@ esp_err_t mqtt_app_start(void)
 {
     // Uses the macro created from Kconfig.projbuild
     esp_mqtt_client_config_t mqtt_cfg = {
-    .broker.address.uri = "mqtt://10.0.0.84:1883",
-};
+        .broker.address.uri = "mqtt://10.0.0.84:1883",
+        .network.reconnect_timeout_ms = 2000, // Reconnect automatically after 2s
+    };
 
     client = esp_mqtt_client_init(&mqtt_cfg);
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);

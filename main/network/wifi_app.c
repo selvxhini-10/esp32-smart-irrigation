@@ -68,7 +68,7 @@ esp_err_t wifi_init_sta(void)
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
     // Set to 8 dBm (32 * 0.25 dBm = 8 dBm) to minimize peak RF current draw
-    esp_wifi_set_max_tx_power(52); 
+    esp_wifi_set_max_tx_power(32); 
 
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
     return (bits & WIFI_CONNECTED_BIT) ? ESP_OK : ESP_FAIL;
