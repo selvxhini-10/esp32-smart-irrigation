@@ -15,31 +15,31 @@
 static const char *TAG = "APP_MAIN";
 
 QueueHandle_t xSensorQueue = NULL;
-QueueHandle_t xMqttQueue = NULL; // Separate queue for MQTT publisher
-static SemaphoreHandle_t i2c_bus_mutex = NULL;
-static i2c_master_dev_handle_t bme280_dev_handle = NULL;
-static adc_oneshot_unit_handle_t adc_handle;
+QueueHandle_t xMqttQueue = NULL; 
 
-// MOSFET Gate Pins for 4 Pumps: GPIO 1, 2, 3, 10
-static const gpio_num_t PUMP_PINS[NUM_PLANTS] = {
+// Tell GCC to ignore unused warnings for hardware handles during simulation
+static SemaphoreHandle_t i2c_bus_mutex __attribute__((unused)) = NULL;
+static adc_oneshot_unit_handle_t adc_handle __attribute__((unused));
+
+static const gpio_num_t PUMP_PINS[NUM_PLANTS] __attribute__((unused)) = {
     GPIO_NUM_1,
     GPIO_NUM_2,
     GPIO_NUM_3,
-    GPIO_NUM_10};
+    GPIO_NUM_10
+};
 
-#define MOISTURE_DRY_THRESHOLD 2000 // Trigger watering if raw ADC > 2000
-#define MOISTURE_WET_THRESHOLD 1500 // Stop watering once raw ADC drops <= 1500
-#define MAX_WATERING_CYCLES 5       // Max delivery cycles after priming
+#define MOISTURE_DRY_THRESHOLD 2000 
+#define MOISTURE_WET_THRESHOLD 1500 
+#define MAX_WATERING_CYCLES 5       
 
 typedef struct
 {
     gpio_num_t gpio_pin;
-    uint32_t prime_time_ms; // Time needed for water to reach the pot
-    uint32_t pulse_time_ms; // Time for active watering volume per burst
-    uint32_t soak_dwell_ms; // Time for water to filter down to the sensor
+    uint32_t prime_time_ms; 
+    uint32_t pulse_time_ms; 
+    uint32_t soak_dwell_ms; 
 } plant_hydraulic_config_t;
 
-// Custom calibration per plant location
 static const plant_hydraulic_config_t PLANT_CONFIGS[NUM_PLANTS] = {
     {.gpio_pin = GPIO_NUM_1, .prime_time_ms = 10000, .pulse_time_ms = 3000, .soak_dwell_ms = 5000},
     {.gpio_pin = GPIO_NUM_2, .prime_time_ms = 10000, .pulse_time_ms = 3000, .soak_dwell_ms = 5000},
@@ -51,101 +51,73 @@ static const plant_hydraulic_config_t PLANT_CONFIGS[NUM_PLANTS] = {
 void sensor_task(void *pvParameters)
 {
     sensor_data_t sensor_payload = {0};
-    bme280_data_t env_data = {0};
+    static uint32_t sim_adc[NUM_PLANTS] = {2100, 1800, 2200, 1400};
 
     while (1)
     {
-        // 1. Sample 4 Moisture Channels
         for (int i = 0; i < NUM_PLANTS; i++)
         {
-            moisture_adc_read_channel(adc_handle, i, &sensor_payload.moisture_raw[i]);
+            sim_adc[i] += 50; 
+            if (sim_adc[i] > 2800) sim_adc[i] = 1300; 
+
+            sensor_payload.moisture_raw[i] = sim_adc[i];
         }
 
-        // 2. Sample BME280 (Silently fall back to 0 if unused)
-        if (bme280_read_data(i2c_bus_mutex, bme280_dev_handle, &env_data) == ESP_OK)
-        {
-            sensor_payload.temperature = env_data.temperature;
-            sensor_payload.humidity = env_data.humidity;
-            sensor_payload.pressure = env_data.pressure;
-        }
-
-        // 3. Dispatch telemetry payload to both control & MQTT queues
         xQueueSend(xSensorQueue, &sensor_payload, pdMS_TO_TICKS(100));
         xQueueSend(xMqttQueue, &sensor_payload, pdMS_TO_TICKS(100));
 
-        vTaskDelay(pdMS_TO_TICKS(8000)); // Sample every 8s
+        vTaskDelay(pdMS_TO_TICKS(8000)); 
     }
 }
 
-// --- TASK 2: Independent 4-Channel Irrigation Control Task ---
+// --- TASK 2: 4-Channel Telemetry & Irrigation Simulator ---
 void irrigation_task(void *pvParameters)
 {
     sensor_data_t rx_data;
 
-    while (1)
-    {
-        // Block until new sensor telemetry arrives (sampled every 8s)
+    while (1) {
         if (xQueueReceive(xSensorQueue, &rx_data, portMAX_DELAY) == pdTRUE)
         {
             for (int i = 0; i < NUM_PLANTS; i++)
             {
+                const plant_hydraulic_config_t *cfg = &PLANT_CONFIGS[i];
+
                 if (rx_data.moisture_raw[i] > MOISTURE_DRY_THRESHOLD)
                 {
-                    const plant_hydraulic_config_t *cfg = &PLANT_CONFIGS[i];
-
-                    ESP_LOGW(TAG, "Plant %d DRY (%d). Priming line for %lu ms...",
+                    ESP_LOGW(TAG, "[SIMULATION] Plant %d DRY (%d). Simulating Line Prime (%lu ms)...",
                              i + 1, rx_data.moisture_raw[i], cfg->prime_time_ms);
 
-                    // Continuous priming cycle
-                    pump_set_state(cfg->gpio_pin, true);
-                    vTaskDelay(pdMS_TO_TICKS(cfg->prime_time_ms));
+                    vTaskDelay(pdMS_TO_TICKS(1000));
 
                     int cycle_count = 0;
-                    int current_moisture = rx_data.moisture_raw[i];
+                    uint32_t sim_moisture = rx_data.moisture_raw[i];
 
-                    while (current_moisture > MOISTURE_WET_THRESHOLD && cycle_count < MAX_WATERING_CYCLES)
+                    while (sim_moisture > MOISTURE_WET_THRESHOLD && cycle_count < MAX_WATERING_CYCLES)
                     {
-                        ESP_LOGI(TAG, "Plant %d: Pulse (%lu ms)...", i + 1, cfg->pulse_time_ms);
-                        pump_set_state(cfg->gpio_pin, true);
-                        vTaskDelay(pdMS_TO_TICKS(cfg->pulse_time_ms));
-
-                        pump_set_state(cfg->gpio_pin, false);
+                        ESP_LOGI(TAG, "[SIMULATION] Plant %d: Pulsing Pump...", i + 1);
+                        vTaskDelay(pdMS_TO_TICKS(500)); 
                         cycle_count++;
 
-                        ESP_LOGI(TAG, "Plant %d: Soaking for %lu ms...", i + 1, cfg->soak_dwell_ms);
-                        vTaskDelay(pdMS_TO_TICKS(cfg->soak_dwell_ms));
-
-                        // Check for fresh telemetry payload safely without deadlocking or drain-spinning
-                        sensor_data_t feedback_data;
-                        if (xQueueReceive(xSensorQueue, &feedback_data, pdMS_TO_TICKS(100)) == pdTRUE)
-                        {
-                            current_moisture = feedback_data.moisture_raw[i];
+                        if (sim_moisture > 250) {
+                            sim_moisture -= 250;
+                        } else {
+                            sim_moisture = MOISTURE_WET_THRESHOLD;
                         }
 
-                        ESP_LOGI(TAG, "Plant %d Post-Soak: %d (Target <= %d)",
-                                 i + 1, current_moisture, MOISTURE_WET_THRESHOLD);
+                        ESP_LOGI(TAG, "[SIMULATION] Plant %d Soaking... New Value: %lu", i + 1, sim_moisture);
+                        vTaskDelay(pdMS_TO_TICKS(1000)); 
                     }
 
-                    pump_set_state(cfg->gpio_pin, false);
-
-                    if (cycle_count >= MAX_WATERING_CYCLES)
-                    {
-                        ESP_LOGE(TAG, "Plant %d: Max cycles reached! Check sensor.", i + 1);
-                    }
-                    else
-                    {
-                        ESP_LOGI(TAG, "Plant %d: Target moisture achieved in %d cycles.", i + 1, cycle_count);
-                    }
+                    ESP_LOGI(TAG, "[SIMULATION] Plant %d: Target Moisture Achieved (%lu) in %d cycles.",
+                             i + 1, sim_moisture, cycle_count);
                 }
                 else
                 {
-                    ESP_LOGD(TAG, "Plant %d MOIST (%d <= %d).",
-                             i + 1, rx_data.moisture_raw[i], MOISTURE_DRY_THRESHOLD);
+                    ESP_LOGI(TAG, "Plant %d MOIST (%d). No watering needed.",
+                             i + 1, rx_data.moisture_raw[i]);
                 }
             }
         }
-        // Yield execution to prevent CPU starvation and log flooding
-        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -158,7 +130,8 @@ void mqtt_publisher_task(void *pvParameters)
     {
         if (xQueueReceive(xMqttQueue, &net_data, portMAX_DELAY) == pdTRUE)
         {
-            mqtt_publish_telemetry(&net_data);
+            // Logging telemetry output for Python MQTT forwarding relay
+            ESP_LOGI("MQTT_PUB", "Publishing telemetry to broker...");
         }
     }
 }
@@ -176,28 +149,8 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Initializing 4-Channel System Capacity...");
 
-    // Create dual queues for concurrent consumption
     xSensorQueue = xQueueCreate(10, sizeof(sensor_data_t));
     xMqttQueue   = xQueueCreate(10, sizeof(sensor_data_t));
-
-    // Initialize Pump GPIOs
-    for (int i = 0; i < NUM_PLANTS; i++)
-    {
-        ESP_ERROR_CHECK(pump_init(PUMP_PINS[i]));
-    }
-
-    // Initialize Moisture ADC & I2C Drivers
-    ESP_ERROR_CHECK(moisture_adc_init(&adc_handle));
-    ESP_ERROR_CHECK(bme280_i2c_init(&i2c_bus_mutex, &bme280_dev_handle));
-
-    // Initialize Network Stack (Wi-Fi + MQTT)
-    ESP_LOGI(TAG, "Starting Network Interfaces...");
-    if (wifi_init_sta() != ESP_OK) {
-        ESP_LOGE(TAG, "Wi-Fi failed to connect! Halting network task initialization.");
-        // Decide whether to abort or run offline irrigation mode
-        return; 
-    }
-    mqtt_app_start();
 
     ESP_LOGI(TAG, "Spawning FreeRTOS Concurrent Worker Tasks...");
 

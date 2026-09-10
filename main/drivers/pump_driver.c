@@ -2,6 +2,7 @@
 #include "esp_log.h"
 
 static const char *TAG = "PUMP_DRIVER";
+#define DRY_RUN_MODE 1  // Set to 1 to block physical pump actuation
 
 esp_err_t pump_init(gpio_num_t gpio_num)
 {
@@ -14,11 +15,15 @@ esp_err_t pump_init(gpio_num_t gpio_num)
     return err;
 }
 
-esp_err_t pump_set_state(gpio_num_t gpio_num, bool turn_on)
+esp_err_t pump_set_state(gpio_num_t gpio_num, bool state)
 {
-    esp_err_t err = gpio_set_level(gpio_num, turn_on ? 1 : 0);
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Pump State -> %s", turn_on ? "ON" : "OFF");
+    if (DRY_RUN_MODE) {
+        // Log state changes without touching hardware GPIOs
+        ESP_LOGI("PUMP_DRIVER", "[DRY RUN] Pump on GPIO %d target state -> %s", 
+                 gpio_num, state ? "ON" : "OFF");
+        return ESP_OK;
     }
-    return err;
+
+    // Normal physical hardware toggle
+    return gpio_set_level(gpio_num, state ? 1 : 0);
 }
