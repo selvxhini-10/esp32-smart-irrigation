@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB_v2
+    type: influxdb
+    access: proxy
+    uid: dfxhlt82vez28b
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: irrigation
+      defaultBucket: irrigation_metrics
+    secureJsonData:
+      token: 8ZROcYWL7RdPfQmTl5UcPvKwr1Vkb0mkV3-V1nJzcjAlxYYr7jbJ6UVcjktPUCs37eZkYbsvWRSXQEsIXyzFOQ==
+    isDefault: true
+    editable: true
